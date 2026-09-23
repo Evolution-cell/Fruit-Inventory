@@ -1,0 +1,114 @@
+import discord
+from discord.ext import commands
+import json
+import os
+from flask import Flask
+from threading import Thread
+
+# Khởi tạo Web Server phụ để qua mặt bộ đếm thời gian của Render
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot Blox Fruit đang chạy trực tuyến 24/7!"
+
+def run():
+    app.run(host='0.0.0.0', port=10000)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+
+# Cấu hình cài đặt Bot Discord
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix="", intents=intents)
+
+# Đường dẫn file lưu rương đồ (Lưu vào ổ đĩa phụ Disk của Render để không mất data)
+FILE_KHO = "/data/inventory.json"
+
+def load_inventory():
+    if not os.path.exists(FILE_KHO):
+        # Tạo file trống nếu chưa có
+        os.makedirs(os.path.dirname(FILE_KHO), exist_ok=True)
+        with open(FILE_KHO, "w", encoding="utf-8") as f:
+            json.dump({}, f)
+        return {}
+    with open(FILE_KHO, "r", encoding="utf-8") as f:
+        try:
+            return json.load(f)
+        except:
+            return {}
+
+def save_inventory(data):
+    os.makedirs(os.path.dirname(FILE_KHO), exist_ok=True)
+    with open(FILE_KHO, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+@bot.event
+async def on_ready():
+    print(f"🔥 Bot {bot.user} is ONLINE and ready to trade 24/7!")
+
+@bot.event
+async def on_message(message):
+    if message.author == bot.user:
+        return
+
+    text = message.content.strip().lower()
+
+    # LỆNH 1: XEM KHO ĐỒ
+    if text in ["kho", "check", "inv", "inventory"]:
+        inventory = load_inventory()
+        if not inventory:
+            await message.channel.send("📦 Your inventory is currently empty!")
+            return
+        
+        reply = "📋 **CURRENT INVENTORY LIST:**\n"
+        for fruit, quantity in inventory.items():
+            if quantity > 0:
+                reply += f"• **{fruit.title()}**: {quantity}\n"
+        await message.channel.send(reply)
+        return
+
+    # LỆNH 2: TỰ ĐỘNG SỬA SỐ LƯỢNG (+ / -)
+    if text.startswith("+") or text.startswith("-"):
+        action_sign = text[0]
+        content = text[1:].strip()
+        parts = content.split(maxsplit=1)
+        
+        if len(parts) < 2:
+            await message.channel.send("❌ Wrong format! Please use: `+2 leopard` or `-1 dragon`")
+            return
+            
+        try:
+            quantity = int(parts[0])
+            fruit_name = parts[1]
+        except ValueError:
+            await message.channel.send("❌ Please enter a valid number! Example: `+2 leopard`")
+            return
+
+        inventory = load_inventory()
+        
+        if action_sign == "+":
+            inventory[fruit_name] = inventory.get(fruit_name, 0) + quantity
+            msg = f"✅ **Added**: +{quantity} **{fruit_name.title()}**. "
+        else:
+            if fruit_name in inventory and inventory[fruit_name] >= quantity:
+                inventory[fruit_name] -= quantity
+                msg = f"📉 **Removed**: -{quantity} **{fruit_name.title()}**. "
+                if inventory[fruit_name] == 0:
+                    del inventory[fruit_name]
+            else:
+                await message.channel.send(f"❌ You don't have enough **{fruit_name.title()}** to remove!")
+                return
+
+        save_inventory(inventory)
+        current_amount = inventory.get(fruit_name, 0)
+        msg += f"You now have total: **{current_amount}**."
+        await message.channel.send(msg)
+
+# Kích hoạt Web Server song song
+keep_alive()
+
+# ĐIỀN MÃ TOKEN CỦA BẠN VÀO GIỮA DẤU NHÁY DƯỚI ĐÂY
+bot.run("MTU1MjMzMjQ5MzgxMjY2MjQwMw.GGeQUI.gsqwQnoTfYyJUVguYCQe8LvSGv6Y5bFC8mHqIQY")
